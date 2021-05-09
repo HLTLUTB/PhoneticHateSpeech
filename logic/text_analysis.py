@@ -1,6 +1,9 @@
+import io
 import os
 import re
 import sys
+from xml.dom import minidom
+
 import unicodedata
 import spacy
 from spacy.lang.es import Spanish
@@ -12,9 +15,10 @@ import pandas as pd
 import epitran
 from tqdm import tqdm
 from nltk.tokenize import word_tokenize
+import xml.etree.ElementTree as ET
 from logic.steaming import Steaming
 from logic.utils import Utils
-from root import DIR_INPUT, DIR_EMBEDDING
+from root import DIR_EMBEDDING, DIR_TRAIN, DIR_TEST
 
 
 class TextAnalysis(object):
@@ -194,62 +198,6 @@ class TextAnalysis(object):
             print('Error dependency_tree: {0}'.format(e))
         return result
 
-    def import_corpus(self, file, sep=';', name_id="id", name_text="text"):
-        result = []
-        try:
-            count = 0
-            file = DIR_INPUT + file
-            df = pd.read_csv(file, sep=sep)
-            df.dropna(inplace=True)
-            df = df[[name_id, name_text]].values.tolist()
-            for row in tqdm(df):
-                id = row[0]
-                text = str(row[1])
-                if len(text) > 0 or text != '':
-                    result.append([id, text])
-                    count = count + 1
-            print('# Sentence: {0}'.format(count))
-        except Exception as e:
-            Utils.standard_error(sys.exc_info())
-            print('Error import_corpus: {0}'.format(e))
-        return result
-
-    @staticmethod
-    def import_dataset(file, **kwargs):
-        result = None
-        try:
-            print('Loading dataset {0}...'.format(file))
-            setting = {}
-            mini_size = kwargs.get('mini_size') if type(kwargs.get('mini_size')) is int else 2
-            sep = ';' if type(kwargs.get('sep')) is str else kwargs.get('sep')
-            setting['url'] = kwargs.get('url') if type(kwargs.get('url')) is bool else False
-            setting['mention'] = kwargs.get('mention') if type(kwargs.get('mention')) is bool else False
-            setting['emoji'] = kwargs.get('emoji') if type(kwargs.get('emoji')) is bool else False
-            setting['hashtag'] = kwargs.get('hashtag') if type(kwargs.get('hashtag')) is bool else False
-            setting['lemmatize'] = kwargs.get('lemmatizer') if type(kwargs.get('lemmatizer')) is bool else False
-            setting['stopwords'] = kwargs.get('stopwords') if type(kwargs.get('stopwords')) is bool else False
-            data = []
-            file_path = DIR_INPUT + file
-            raw_data = pd.read_csv(file_path, sep=sep, encoding='UTF-8')
-            for i, row in raw_data.iterrows():
-                text = TextAnalysis.clean_text(row['Tweet'], **setting)
-                len_text = len(text.split(' '))
-                if len_text > mini_size:
-                    tag = int(row['Intensity'])
-                    value = 0
-                    if tag > 0:
-                        value = 1
-                    elif tag < 0:
-                        value = -1
-                    elif tag == 0:
-                        value = 0
-                    data.append([text, value])
-            result = pd.DataFrame(data, columns=['message', 'valence'])
-        except Exception as e:
-            Utils.standard_error(sys.exc_info())
-            print('Error import_dataset: {0}'.format(e))
-        return result
-
     @staticmethod
     def proper_encoding(text):
         result = ''
@@ -280,7 +228,8 @@ class TextAnalysis(object):
             print('Error stopwords: {0}'.format(e))
         return result
 
-    def lemmatization(self, text):
+    @staticmethod
+    def lemmatization(text):
         result = ''
         list_tmp = []
         try:
@@ -308,11 +257,11 @@ class TextAnalysis(object):
     def delete_special_patterns(text):
         result = ''
         try:
-            text = re.sub(r'\©|\×|\⇔|\_|\»|\«|\~|\#|\$|\€|\Â|\�|\¬', ' ', text)# Elimina caracteres especilaes
-            text = re.sub(r'\,|\;|\:|\!|\¡|\’|\‘|\”|\“|\"|\'|\`', ' ', text)# Elimina puntuaciones
-            text = re.sub(r'\}|\{|\[|\]|\(|\)|\<|\>|\?|\¿|\°|\|', ' ', text)  # Elimina parentesis
-            text = re.sub(r'\/|\-|\+|\*|\=|\^|\%|\&|\$|\.', ' ', text)  # Elimina operadores
-            text = re.sub(r'\b\d+(?:\.\d+)?\s+', ' ', text)  # Elimina número con puntuacion
+            text = re.sub(r'\©|\×|\⇔|\_|\»|\«|\~|\#|\$|\€|\Â|\�|\¬', '', text)# Elimina caracteres especilaes
+            text = re.sub(r'\,|\;|\:|\!|\¡|\’|\‘|\”|\“|\"|\'|\`', '', text)# Elimina puntuaciones
+            text = re.sub(r'\}|\{|\[|\]|\(|\)|\<|\>|\?|\¿|\°|\|', '', text)  # Elimina parentesis
+            text = re.sub(r'\/|\-|\+|\*|\=|\^|\%|\&|\$', '', text)  # Elimina operadores
+            text = re.sub(r'\b\d+(?:\.\d+)?\s+', '', text)  # Elimina número con puntuacion
             result = text.lower()
         except Exception as e:
             Utils.standard_error(sys.exc_info())
@@ -320,26 +269,18 @@ class TextAnalysis(object):
         return result
 
     @staticmethod
-    def clean_text(text, **kwargs):
+    def clean_text(text, stopwords: bool = False):
         result = ''
         try:
-            url = kwargs.get('url') if type(kwargs.get('url')) is bool else False
-            mention = kwargs.get('mention') if type(kwargs.get('mention')) is bool else False
-            emoji = kwargs.get('emoji') if type(kwargs.get('emoji')) is bool else False
-            hashtag = kwargs.get('hashtag') if type(kwargs.get('hashtag')) is bool else False
-            lemmatizer = kwargs.get('lemmatizer') if type(kwargs.get('lemmatizer')) is bool else False
-            stopwords = kwargs.get('stopwords') if type(kwargs.get('stopwords')) is bool else False
-
             text_out = str(text).lower()
-            text_out = re.sub("[\U0001f000-\U000e007f]", ' ', text_out) if emoji else text_out
+            text_out = TextAnalysis.proper_encoding(text_out)
+            text_out = re.sub("[\U0001f000-\U000e007f]", 'emoji', text_out)
             text_out = re.sub(
                 r'(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+'
-                r'|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))',
-                ' ', text_out) if url else text_out
-            text_out = re.sub("@([A-Za-z0-9_]{1,40})", ' ', text_out) if mention else text_out
-            text_out = re.sub("#([A-Za-z0-9_]{1,40})", ' ', text_out) if hashtag else text_out
+                r'|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))', 'url', text_out)
+            text_out = re.sub("#user#", 'user', text_out)
+            text_out = re.sub("#hashtag#", 'hashtag', text_out)
             text_out = TextAnalysis.delete_special_patterns(text_out)
-            text_out = TextAnalysis.lemmatization(text_out) if lemmatizer else text_out
             text_out = TextAnalysis.stopwords(text_out) if stopwords else text_out
             text_out = re.sub(r'\s+', ' ', text_out).strip()
             text_out = text_out.rstrip()
@@ -399,3 +340,154 @@ class TextAnalysis(object):
             Utils.standard_error(sys.exc_info())
             print('Error token_frequency: {0}'.format(e))
         return dict_token
+
+    def transformer_file(self, file: str = '', dataset: str = 'train'):
+        out = {}
+        try:
+            if dataset == 'train':
+                path_dir = '{0}{2}{1}{3}'.format(DIR_TRAIN, os.sep, self.lang, file)
+            else:
+                path_dir = '{0}{2}{1}{3}'.format(DIR_TEST, os.sep, self.lang, file)
+
+            tree = ET.parse((path_dir))
+            root = tree.getroot()
+            list_content = [i.text for i in root.iter('document')]
+            content = '\n'.join(list_content)
+            out[file[:-4]] = content
+        except Exception as e:
+            Utils.standard_error(sys.exc_info())
+            print('Error token_frequency: {0}'.format(e))
+        return out
+
+    def syntax_patterns(self, text):
+        result = None
+        try:
+            doc = self.nlp(text)
+            dict_noun = {}
+            dict_verb = {}
+            dict_adv = {}
+            dict_adj = {}
+            for span in doc.sents:
+                result_dependency = self.dependency_all(str(span))
+                for item in result_dependency:
+                    if item['is_stop'] is not True and item['is_punct'] is not True and item['pos_'] not in 'PRON':
+                        if item['pos_'] == 'NOUN':
+                            # NOUN
+                            chunk = str(item['chunk']).lower()
+                            chunk_value = [chunk, item['pos_']]
+                            dict_noun[chunk] = chunk_value
+                            # Chinking
+                            for child in item['children']:
+                                if child['pos_'] == 'ADJ':
+                                    # ADJ + NOUN
+                                    chunk = str(child['child']).lower() + ' ' + str(item['chunk']).lower()
+                                    chunk_value = [[str(child['child']).lower(), child['pos_']],
+                                                   [str(item['chunk']).lower(), item['pos_']]]
+                                    dict_noun[chunk] = chunk_value
+                                    dict_adj[chunk] = chunk_value
+
+                                elif child['pos_'] == 'ADP':
+                                    # ADP + NOUN
+                                    chunk = str(child['child']).lower() + ' ' + str(item['chunk']).lower()
+                                    chunk_value = [[str(child['child']).lower(), child['pos_']],
+                                                   [str(item['chunk']).lower(), item['pos_']]]
+                                    dict_noun[chunk] = chunk_value
+
+                        elif item['pos_'] in ['PRON', 'PROPN']:
+                            for child in item['children']:
+                                if child['pos_'] == 'NOUN':
+                                    # PRON | PROPN + NOUN
+                                    chunk = str(item['chunk']).lower() + ' ' + str(child['child']).lower()
+                                    chunk_value = [[str(item['chunk']).lower(), item['pos_']],
+                                                   [str(child['child']).lower(), child['pos_']]]
+                                    dict_noun[chunk] = chunk_value
+
+                        elif item['pos_'] == 'ADJ':
+                            # ADJ
+                            chunk = str(item['chunk']).lower()
+                            chunk_value = [chunk, item['pos_']]
+                            dict_adj[chunk] = chunk_value
+                            for child in item['children']:
+                                if child['pos_'] == 'NOUN':
+                                    # ADJ + NOUN
+                                    chunk = str(item['chunk']).lower() + ' ' + str(child['child']).lower()
+                                    chunk_value = [[str(item['chunk']).lower(), item['pos_']],
+                                                   [str(child['child']).lower(), child['pos_']]]
+                                    dict_adj[chunk] = chunk_value
+
+                        if item['dep_'] is not 'ROOT':
+                            if item['head_pos'] == 'NOUN':
+                                for child in item['children']:
+                                    if child['pos_'] == 'ADP':
+                                        # NOUN + ADP + NOUN
+                                        chunk = str(item['head_text']).lower() + ' ' + \
+                                                str(child['child']).lower() + ' ' + \
+                                                str(item['chunk']).lower()
+                                        chunk_value = [[str(item['head_text']).lower(), item['head_pos']],
+                                                       [str(child['child']).lower(), child['pos_']],
+                                                       [str(item['chunk']).lower(), item['pos_']]]
+                                        dict_noun[chunk] = chunk_value
+
+                            elif item['head_pos'] == 'ADJ':
+                                for child in item['children']:
+                                    if child['pos_'] == 'ADJ':
+                                        # ADJ + ADJ + NOUN
+                                        chunk = str(item['head_text']).lower() + ' ' + \
+                                                str(child['child']).lower() + ' ' + \
+                                                str(item['chunk']).lower()
+                                        chunk_value = [[str(item['head_text']).lower(), item['head_pos']],
+                                                       [str(child['child']).lower(), child['pos_']],
+                                                       [str(item['chunk']).lower(), item['pos_']]]
+                                        dict_noun[chunk] = chunk_value
+                                        dict_adj[chunk] = chunk_value
+
+                            elif item['head_pos'] == 'VERB':
+                                for child in item['children']:
+                                    if child['pos_'] == 'ADJ':
+                                        # VERB + NOUN + ADJ
+                                        chunk = str(item['head_text']).lower() + ' ' + \
+                                                str(item['chunk']).lower() + ' ' + \
+                                                str(child['child']).lower()
+                                        chunk_value = [[str(item['head_text']).lower(), item['head_pos']],
+                                                       [str(item['chunk']).lower(), item['pos_']],
+                                                       [str(child['child']).lower(), child['pos_']]]
+                                        dict_verb[chunk] = chunk_value
+
+                                    elif child['pos_'] == 'ADP':
+                                        # VERB + ADP + NOUN
+                                        chunk = str(item['head_text']).lower() + ' ' + \
+                                                str(child['child']).lower() + ' ' + \
+                                                str(item['chunk']).lower()
+                                        chunk_value = [[str(item['head_text']).lower(), item['head_pos']],
+                                                       [str(child['child']).lower(), child['pos_']],
+                                                       [str(item['chunk']).lower(), item['pos_']]]
+                                        dict_verb[chunk] = chunk_value
+
+                            elif str(item['head_pos']) == 'ADV':
+                                for child in item['children']:
+                                    if child['pos_'] == 'ADV':
+                                        # ADV + ADV + NOUN
+                                        chunk = str(item['head_text']).lower() + ' ' + \
+                                                str(child['child']).lower() + ' ' + \
+                                                str(item['chunk']).lower()
+                                        chunk_value = [[str(item['head_text']).lower(), item['head_pos']],
+                                                       [str(child['child']).lower(), child['pos_']],
+                                                       [str(item['chunk']).lower(), item['pos_']]]
+                                        dict_adv[chunk] = chunk_value
+
+                                    elif child['pos_'] == 'ADJ':
+                                        # ADV + NOUN + ADV
+                                        chunk = str(item['head_text']).lower() + ' ' + \
+                                                str(item['chunk']).lower() + ' ' + \
+                                                str(child['child']).lower()
+                                        chunk_value = [[str(item['head_text']).lower(), item['head_pos']],
+                                                       [str(item['chunk']).lower(), item['pos_']],
+                                                       [str(child['child']).lower(), child['pos_']]]
+                                        dict_adv[chunk] = chunk_value
+
+            dict_chunk = {'NOUN': dict_noun, 'VERB': dict_verb, 'ADV': dict_adv, 'ADJ': dict_adj}
+            result = dict_chunk
+        except Exception as e:
+            Utils.standard_error(sys.exc_info())
+            print('Error syntax_patterns: {0}'.format(e))
+        return result

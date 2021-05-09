@@ -10,9 +10,9 @@ text = 'Vine a ver si se habían muerto en el apocalipsis y aún sigo leyendo su
 ta = TextAnalysis(lang=lang)
 fe = FeatureExtraction(lang=lang, text_analysis=ta)
 
-text_clean = ta.clean_text(text, **setting)
+text_clean = ta.clean_text(text)
 
-print('Original text'.format(text))
+print('Original text'.format(text_clean))
 
 print('Get Syllabification Features')
 text_syllable = fe.get_feature_syllable(text_clean)
