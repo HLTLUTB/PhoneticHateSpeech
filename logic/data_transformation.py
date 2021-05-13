@@ -4,14 +4,16 @@ from os.path import isfile
 from os import scandir
 import xml.etree.ElementTree as ET
 from sys import path
-from root import DIR_DATA
+from root import DIR_INPUT
 
 
 class DataTransformation(object):
 
-    def __init__(self, dataset: str = 'pan21-author-profiling-training-2021-03-14', lang: str = 'es'):
+    def __init__(self, dataset: str = 'pan21-author-profiling-training-2021-03-14',
+                 lang: str = 'es', type_data: str = 'train'):
         self.dataset = dataset
-        self.path_dir = '{0}{1}{2}{3}{1}'.format(DIR_DATA, os.sep, dataset, lang)
+        self.type_data = type_data
+        self.path_dir = '{0}{1}{2}{1}{3}{1}'.format(DIR_INPUT, os.sep, dataset, lang)
 
     def get_data(self):
         out_put = []
@@ -30,7 +32,7 @@ class DataTransformation(object):
                 elif file.endswith(".txt"):
                     truth_file = file
 
-        if self.dataset == 'train':
+        if self.type_data == 'train':
             with open(self.path_dir + truth_file, 'r+', encoding="utf-8") as file:
                 for line in file:
                     entry = line.split(':::')
@@ -48,5 +50,6 @@ class DataTransformation(object):
 
 
 if __name__ == '__main__':
-    dt = DataTransformation(dataset='train', lang='es')
+    dt = DataTransformation(dataset='pan21-author-profiling-training-2021-03-14',
+                            lang='es', type_data='train')
     print(dt.get_data())

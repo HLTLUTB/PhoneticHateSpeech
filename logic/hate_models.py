@@ -15,7 +15,7 @@ class HateModels(object):
         self.lang = lang
         self.ta = TextAnalysis(lang=lang)
         self.features = FeatureExtraction(lang=lang, text_analysis=self.ta)
-        self.test = DataTransformation(dataset=dataset, lang=lang).get_data()
+        self.test = DataTransformation(dataset=dataset, lang=lang, type_data='test').get_data()
         file_model = '{0}{1}.pkl'.format(DIR_MODELS, name_model)
         self.clf = pickle.load(open(file_model, 'rb'))
 

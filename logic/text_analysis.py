@@ -18,7 +18,7 @@ from nltk.tokenize import word_tokenize
 import xml.etree.ElementTree as ET
 from logic.steaming import Steaming
 from logic.utils import Utils
-from root import DIR_EMBEDDING, DIR_TRAIN, DIR_TEST
+from root import DIR_EMBEDDING, DIR_INPUT
 
 
 class TextAnalysis(object):
@@ -85,7 +85,7 @@ class TextAnalysis(object):
                 for stm in doc.sents:
                     stm = str(stm).rstrip()
                     stm = self.clean_text(stm)
-                    if stm != '':
+                    if stm not in ['', " "]:
                         print('Sentence: {0}'.format(stm))
                         if syllable:
                             list_syllable = [token['syllables'] for token in self.tagger(stm) if
@@ -284,7 +284,7 @@ class TextAnalysis(object):
             text_out = TextAnalysis.stopwords(text_out) if stopwords else text_out
             text_out = re.sub(r'\s+', ' ', text_out).strip()
             text_out = text_out.rstrip()
-            result = text_out if text_out != ' ' else None
+            result = text_out if text_out not in [' ', ""] else None
         except Exception as e:
             Utils.standard_error(sys.exc_info())
             print('Error clean_text: {0}'.format(e))
@@ -299,7 +299,7 @@ class TextAnalysis(object):
                 for line in line_list[1:]:
                     item = line.strip('\n').split('\t')
                     word = str(item[1]) if lang == 'es' else str(item[0])
-                    if word != 'NO TRANSLATION' and word:
+                    if word not in ['NO TRANSLATION', '']:
                         valence = float(item[2])
                         arousal = float(item[3])
                         dominance = float(item[4])
@@ -341,15 +341,11 @@ class TextAnalysis(object):
             print('Error token_frequency: {0}'.format(e))
         return dict_token
 
-    def transformer_file(self, file: str = '', dataset: str = 'train'):
+    def transformer_file(self, file: str = '', dataset: str = 'pan21-author-profiling-test-without-gold'):
         out = {}
         try:
-            if dataset == 'train':
-                path_dir = '{0}{2}{1}{3}'.format(DIR_TRAIN, os.sep, self.lang, file)
-            else:
-                path_dir = '{0}{2}{1}{3}'.format(DIR_TEST, os.sep, self.lang, file)
-
-            tree = ET.parse((path_dir))
+            path_dir = '{0}{1}{2}{1}{3}{1}{4}'.format(DIR_INPUT, os.sep, dataset, self.lang, file)
+            tree = ET.parse(path_dir)
             root = tree.getroot()
             list_content = [i.text for i in root.iter('document')]
             content = '\n'.join(list_content)
@@ -415,7 +411,7 @@ class TextAnalysis(object):
                                                    [str(child['child']).lower(), child['pos_']]]
                                     dict_adj[chunk] = chunk_value
 
-                        if item['dep_'] is not 'ROOT':
+                        if item['dep_'] is not ['ROOT']:
                             if item['head_pos'] == 'NOUN':
                                 for child in item['children']:
                                     if child['pos_'] == 'ADP':
